@@ -5,12 +5,12 @@ import {
   generateObjectDeprecated,
   ModelClass
 } from "@elizaos/core";
-import pinataSDK from "@pinata/sdk";
+import { PinataSDK } from "pinata-web3";
 import { createHash } from "node:crypto";
 
 // src/functions/uploadJSONToIPFS.ts
 async function uploadJSONToIPFS(pinata, jsonMetadata) {
-  const { IpfsHash } = await pinata.pinJSONToIPFS(jsonMetadata);
+  const { IpfsHash } = await pinata.upload.json(jsonMetadata);
   return IpfsHash;
 }
 
@@ -19,23 +19,49 @@ import {
   createPublicClient,
   createWalletClient,
   http,
-  formatUnits
+  formatUnits,
+  defineChain
 } from "viem";
-import { storyOdyssey } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 import { StoryClient } from "@story-protocol/core-sdk";
+var storyAeneid = /* @__PURE__ */ defineChain({
+  id: 1315,
+  name: "Story Aeneid",
+  network: "story-aeneid",
+  nativeCurrency: {
+    decimals: 18,
+    name: "IP",
+    symbol: "IP"
+  },
+  rpcUrls: {
+    default: { http: ["https://aeneid.storyrpc.io"] }
+  },
+  blockExplorers: {
+    default: {
+      name: "Story Aeneid Explorer",
+      url: "https://aeneid.storyscan.xyz"
+    }
+  },
+  contracts: {
+    multicall3: {
+      address: "0xca11bde05977b3631167028862be2a173976ca11",
+      blockCreated: 1792
+    }
+  },
+  testnet: true
+});
 var DEFAULT_CHAIN_CONFIGS = {
-  odyssey: {
-    chainId: 1516,
-    name: "Odyssey Testnet",
-    chain: storyOdyssey,
-    rpcUrl: "https://odyssey.storyrpc.io/",
+  aeneid: {
+    chainId: 1315,
+    name: "Aeneid Testnet",
+    chain: storyAeneid,
+    rpcUrl: "https://aeneid.storyrpc.io/",
     nativeCurrency: {
       name: "IP",
       symbol: "IP",
       decimals: 18
     },
-    blockExplorerUrl: "https://odyssey.storyscan.xyz"
+    blockExplorerUrl: "https://aeneid.storyscan.xyz"
   }
 };
 var WalletProvider = class {
@@ -52,21 +78,21 @@ var WalletProvider = class {
     this.address = account.address;
     const config = {
       account,
-      transport: http(DEFAULT_CHAIN_CONFIGS.odyssey.rpcUrl),
-      chainId: "odyssey"
+      transport: http(DEFAULT_CHAIN_CONFIGS.aeneid.rpcUrl),
+      chainId: "aeneid"
     };
     this.storyClient = StoryClient.newClient(config);
     const baseConfig = {
-      chain: storyOdyssey,
-      transport: http(DEFAULT_CHAIN_CONFIGS.odyssey.rpcUrl)
+      chain: storyAeneid,
+      transport: http(DEFAULT_CHAIN_CONFIGS.aeneid.rpcUrl)
     };
     this.publicClient = createPublicClient(
       baseConfig
     );
     this.walletClient = createWalletClient({
-      chain: storyOdyssey,
-      transport: http(DEFAULT_CHAIN_CONFIGS.odyssey.rpcUrl),
-      account
+      chain: storyAeneid,
+      transport: http(DEFAULT_CHAIN_CONFIGS.aeneid.rpcUrl),
+      account: account.address
     });
   }
   getAddress() {
@@ -122,11 +148,12 @@ var registerIPTemplate = `Given the recent messages below:
 {{recentMessages}}
 
 Extract the following information about the requested IP registration:
-- Field "title": The title of your IP
-- Field "description": The description of your IP
-- Field "ipType": The type of your IP. Type of the IP Asset, can be defined arbitrarily by the
-creator. I.e. \u201Ccharacter\u201D, \u201Cchapter\u201D, \u201Clocation\u201D, \u201Citems\u201D, "music", etc. If a user doesn't provide
-an ipType, you can infer it from the title and description. It should be one word.
+- Field "title": The title of your IP. **Do not search the web for any information related to the title.**
+- Field "description": The description of your IP. **Do not search the web for any information related to the description.**
+- Field "ipType": The type of your IP. **Do not search the web for any information related to the IP type.**
+- Field "creatorName": The name of the creator. **Do not search the web for any information related to the creator's name.**
+- Field "mediaUrl": The media url for the media provided by the creator. Should be included in description or provided by artist. If not found, ask the user directly for the media URL. **Do not search the web for the URL, do not attempt to access it, validate it, or use any web search tools. Simply collect the URL as provided by the user.**
+- Field "mimeType": The mimetype is the mime type of media url, ask for the mime type if not provided or extract from media url. **Do not search the web for any information related to the mime type.**
 
 Respond with a JSON markdown block containing only the extracted values. A user must explicitly provide a title and description.
 
@@ -134,7 +161,10 @@ Respond with a JSON markdown block containing only the extracted values. A user 
 {
     "title": string,
     "description": string,
-    "ipType": string
+    "ipType": string,
+    "creatorName": string,
+    "mediaUrl": string,
+    "mimeType": string,
 }
 \`\`\`
 `;
@@ -216,6 +246,67 @@ the others fields, set them as null.
 `;
 
 // src/actions/registerIP.ts
+import { zeroAddress, zeroHash } from "viem";
+
+// src/functions/checkVerification.ts
+import { ethers } from "ethers";
+var chainId = process.env.CHAIN_ID ? Number(process.env.CHAIN_ID) : 1942999413;
+var provider = new ethers.JsonRpcProvider(process.env.HUMANITY_RPC_URL, {
+  chainId,
+  name: "custom",
+  ensAddress: null
+});
+var vcContractABI = [
+  "function isVerified(address _user) view returns (bool)"
+];
+var vcContract = new ethers.Contract(
+  process.env.VC_CONTRACT_ADDRESS,
+  vcContractABI,
+  provider
+);
+var checkVerification = async (subject_address) => {
+  try {
+    const isVerified = await vcContract.isVerified(subject_address);
+    return isVerified;
+  } catch (error) {
+    console.error("Error checking verification:", error);
+    throw error;
+  }
+};
+
+// src/actions/registerIP.ts
+var commercialRemixTerms = {
+  transferable: true,
+  royaltyPolicy: "0xBe54FB168b3c982b7AaE60dB6CF75Bd8447b390E",
+  // RoyaltyPolicyLAP address from https://docs.story.foundation/docs/deployed-smart-contracts
+  defaultMintingFee: 0n,
+  expiration: 0n,
+  commercialUse: true,
+  commercialAttribution: true,
+  commercializerChecker: zeroAddress,
+  commercializerCheckerData: zeroAddress,
+  commercialRevShare: 50,
+  // can claim 50% of derivative revenue
+  commercialRevCeiling: 0n,
+  derivativesAllowed: true,
+  derivativesAttribution: true,
+  derivativesApproval: false,
+  derivativesReciprocal: true,
+  derivativeRevCeiling: 0n,
+  currency: "0x1514000000000000000000000000000000000000",
+  // $WIP address from https://docs.story.foundation/docs/deployed-smart-contracts
+  uri: ""
+};
+var licensingConfig = {
+  isSet: false,
+  mintingFee: 0n,
+  licensingHook: zeroAddress,
+  hookData: zeroHash,
+  commercialRevShare: 0,
+  disabled: false,
+  expectMinimumGroupRewardShare: 0,
+  expectGroupRewardPool: zeroAddress
+};
 var RegisterIPAction = class {
   constructor(walletProvider) {
     this.walletProvider = walletProvider;
@@ -225,7 +316,17 @@ var RegisterIPAction = class {
     const ipMetadata = storyClient.ipAsset.generateIpMetadata({
       title: params.title,
       description: params.description,
-      ipType: params.ipType ? params.ipType : void 0
+      ipType: params.ipType ? params.ipType : void 0,
+      creators: params.creatorName ? [{
+        name: params.creatorName,
+        address: this.walletProvider.getAddress(),
+        contributionPercent: 100
+      }] : void 0,
+      media: params.mediaUrl ? [{
+        name: params.title,
+        url: params.mediaUrl,
+        mimeType: params.mimeType
+      }] : void 0
     });
     const nftMetadata = {
       name: params.title,
@@ -233,20 +334,25 @@ var RegisterIPAction = class {
     };
     const pinataJWT = runtime.getSetting("PINATA_JWT");
     if (!pinataJWT) throw new Error("PINATA_JWT not configured");
-    const pinata = new pinataSDK({ pinataJWTKey: pinataJWT });
+    const pinata = new PinataSDK({ pinataJwt: pinataJWT });
     const ipIpfsHash = await uploadJSONToIPFS(pinata, ipMetadata);
     const ipHash = createHash("sha256").update(JSON.stringify(ipMetadata)).digest("hex");
     const nftIpfsHash = await uploadJSONToIPFS(pinata, nftMetadata);
     const nftHash = createHash("sha256").update(JSON.stringify(nftMetadata)).digest("hex");
     const response = await storyClient.ipAsset.mintAndRegisterIpAssetWithPilTerms({
-      spgNftContract: "0xC81B2cbEFD1aA0227bf513729580d3CF40fd61dF",
-      terms: [],
+      spgNftContract: "0xc32A8a0FF3beDDDa58393d022aF433e78739FAbc",
+      licenseTermsData: [{
+        terms: commercialRemixTerms,
+        licensingConfig
+      }],
+      allowDuplicates: true,
       ipMetadata: {
         ipMetadataURI: `https://ipfs.io/ipfs/${ipIpfsHash}`,
         ipMetadataHash: `0x${ipHash}`,
         nftMetadataURI: `https://ipfs.io/ipfs/${nftIpfsHash}`,
         nftMetadataHash: `0x${nftHash}`
       },
+      recipient: this.walletProvider.getAddress(),
       txOptions: { waitForTransaction: true }
     });
     return response;
@@ -272,12 +378,31 @@ var registerIPAction = {
       context: registerIPContext,
       modelClass: ModelClass.SMALL
     });
+    const requiredFields = ["title", "description", "creatorName", "mediaUrl", "mimeType"];
+    const missingFields = requiredFields.filter((field) => !content[field]);
+    if (missingFields.length > 0) {
+      callback?.({
+        text: `Please provide the following details: ${missingFields.join(", ")}.`
+      });
+      return false;
+    }
     const walletProvider = new WalletProvider(runtime);
     const action = new RegisterIPAction(walletProvider);
     try {
+      const verified = await checkVerification(walletProvider.getAddress());
+      if (!verified) {
+        callback?.({
+          text: `Artist needs to verify first, please verify using /verifyCredential`
+        });
+        return false;
+      } else {
+        callback?.({
+          text: `Artist successfully verified!`
+        });
+      }
       const response = await action.registerIP(content, runtime);
       callback?.({
-        text: `Successfully registered IP ID: ${response.ipId}. Transaction Hash: ${response.txHash}. View it on the explorer: https://explorer.story.foundation/ipa/${response.ipId}`
+        text: `Successfully registered IP ID: ${response.ipId}. Transaction Hash: ${response.txHash}. View it on the explorer: https://aeneid.explorer.story.foundation/ipa/${response.ipId}`
       });
       return true;
     } catch (e) {
@@ -302,14 +427,38 @@ var registerIPAction = {
       {
         user: "{{user2}}",
         content: {
-          text: "Sure! Please provide the title and description of your IP.",
+          text: "Sure! Please provide the title, description of your IP, creator's name, url of your media and its mime type.",
           action: "REGISTER_IP"
         }
       },
       {
         user: "{{user1}}",
         content: {
-          text: "Register my IP titled 'My IP' with the description 'This is my IP'"
+          text: "Register my IP titled 'My IP' with the description 'This is my IP'."
+        }
+      },
+      {
+        user: "{{user1}}",
+        content: {
+          text: "I want to register an IP titled 'My Artwork' with the description 'A beautiful piece of art'. My name is 'John Doe', and here is the media URL: 'https://example.com/artwork.jpg' with mime type 'image/jpeg'."
+        }
+      },
+      {
+        user: "{{user1}}",
+        content: {
+          text: "Please register my IP titled 'My Music' with the description 'An original song'. The creator's name is 'Jane Smith', media URL is 'https://example.com/music.mp3', and the mime type is 'audio/mpeg'."
+        }
+      },
+      {
+        user: "{{user1}}",
+        content: {
+          text: "I would like to register my IP titled 'My Book' with the description 'A thrilling novel'. The creator is 'Alice Johnson', media URL is 'https://example.com/book.pdf', and the mime type is 'application/pdf'."
+        }
+      },
+      {
+        user: "{{user1}}",
+        content: {
+          text: "Register my IP titled 'My Game' with the description 'An exciting adventure game'. Creator's name is 'Bob Brown', media URL is 'https://example.com/game.zip', and mime type is 'application/zip'."
         }
       }
     ]
@@ -1317,6 +1466,10 @@ var LicenseIPAction = class {
       licensorIpId: params.licensorIpId,
       licenseTermsId: params.licenseTermsId,
       amount: params.amount || 1,
+      maxMintingFee: BigInt(0),
+      // disabled
+      maxRevenueShare: 100,
+      // default
       txOptions: { waitForTransaction: true }
     });
     return response;
@@ -1347,7 +1500,7 @@ var licenseIPAction = {
     try {
       const response = await action.licenseIP(content);
       callback?.({
-        text: `Successfully minted license tokens: ${response.licenseTokenIds.join(", ")}. Transaction Hash: ${response.txHash}. View it on the block explorer: https://odyssey.storyscan.xyz/tx/${response.txHash}`
+        text: `Successfully minted license tokens: ${response.licenseTokenIds.join(", ")}. Transaction Hash: ${response.txHash}. View it on the block explorer: https://aeneid.storyscan.xyz/tx/${response.txHash}`
       });
       return true;
     } catch (e) {
@@ -1394,7 +1547,7 @@ import {
   generateObjectDeprecated as generateObjectDeprecated3,
   ModelClass as ModelClass3
 } from "@elizaos/core";
-import { zeroAddress } from "viem";
+import { zeroAddress as zeroAddress2 } from "viem";
 var AttachTermsAction = class {
   constructor(walletProvider) {
     this.walletProvider = walletProvider;
@@ -1404,13 +1557,13 @@ var AttachTermsAction = class {
     elizaLogger3.log("params", params);
     const licenseTerms = {
       transferable: true,
-      royaltyPolicy: params.commercialUse ? "0x28b4F70ffE5ba7A26aEF979226f77Eb57fb9Fdb6" : zeroAddress,
+      royaltyPolicy: params.commercialUse ? "0x28b4F70ffE5ba7A26aEF979226f77Eb57fb9Fdb6" : zeroAddress2,
       defaultMintingFee: params.mintingFee ? BigInt(params.mintingFee) : BigInt(0),
       expiration: BigInt(0),
       commercialUse: params.commercialUse || false,
       commercialAttribution: false,
-      commercializerChecker: zeroAddress,
-      commercializerCheckerData: zeroAddress,
+      commercializerChecker: zeroAddress2,
+      commercializerCheckerData: zeroAddress2,
       commercialRevShare: params.commercialUse ? params.commercialRevShare : 0,
       commercialRevCeiling: BigInt(0),
       derivativesAllowed: true,
@@ -1459,7 +1612,7 @@ var attachTermsAction = {
       const response = await action.attachTerms(content);
       if (response.attachTermsResponse.success) {
         callback?.({
-          text: `Successfully attached license terms: ${response.registerPilTermsResponse.licenseTermsId}. Transaction Hash: ${response.attachTermsResponse.txHash}. View it on the block explorer: https://odyssey.storyscan.xyz/tx/${response.attachTermsResponse.txHash}`
+          text: `Successfully attached license terms: ${response.registerPilTermsResponse.licenseTermsId}. Transaction Hash: ${response.attachTermsResponse.txHash}. View it on the block explorer: https://aeneid.storyscan.xyz/tx/${response.attachTermsResponse.txHash}`
         });
         return true;
       }
@@ -1516,7 +1669,7 @@ import {
 // src/lib/api.ts
 import { elizaLogger as elizaLogger4 } from "@elizaos/core";
 var API_BASE_URL = process.env.STORY_API_BASE_URL;
-var API_VERSION = "v2";
+var API_VERSION = "v3";
 var API_URL = `${API_BASE_URL}/${API_VERSION}`;
 var API_KEY = process.env.STORY_API_KEY || "";
 async function getResource(resourceName, resourceId, _options) {
@@ -1528,8 +1681,8 @@ async function getResource(resourceName, resourceId, _options) {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
-        "x-api-key": API_KEY,
-        "x-chain": "1516"
+        "X-Api-Key": API_KEY,
+        "X-Chain": "story-aeneid"
       }
     });
     if (res.ok) {
@@ -1545,7 +1698,6 @@ async function getResource(resourceName, resourceId, _options) {
 }
 
 // src/actions/getAvailableLicenses.ts
-import { storyOdyssey as storyOdyssey2 } from "viem/chains";
 var GetAvailableLicensesAction = class {
   // Default query options for license terms
   defaultQueryOptions = {
@@ -1565,7 +1717,7 @@ var GetAvailableLicensesAction = class {
         headers: {
           "Content-Type": "application/json",
           "x-api-key": API_KEY,
-          "x-chain": storyOdyssey2.id.toString()
+          "x-chain": "1315"
         },
         cache: "no-cache",
         body: JSON.stringify({
@@ -1773,6 +1925,7 @@ export {
   licenseIPTemplate,
   registerIPAction,
   registerIPTemplate,
+  storyAeneid,
   storyPlugin,
   storyWalletProvider
 };

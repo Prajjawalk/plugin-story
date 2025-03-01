@@ -12,7 +12,6 @@ import { getAvailableLicensesTemplate, licenseIPTemplate } from "../templates";
 import type { Address } from "viem";
 import { type IPLicenseDetails, RESOURCE_TYPE } from "../types/api";
 import { API_KEY, API_URL } from "../lib/api";
-import { storyOdyssey } from "viem/chains";
 
 export { licenseIPTemplate };
 
@@ -51,7 +50,7 @@ export class GetAvailableLicensesAction {
                 headers: {
                     "Content-Type": "application/json",
                     "x-api-key": API_KEY,
-                    "x-chain": storyOdyssey.id.toString(),
+                    "x-chain": "1315",
                 },
                 cache: "no-cache",
                 body: JSON.stringify({
@@ -89,7 +88,7 @@ const formatLicenseTerms = (license: IPLicenseDetails): string => {
   • Derivatives: ${terms.derivativesAllowed ? "Allowed" : "Not Allowed"}
   • Derivatives Attribution: ${terms.derivativesAttribution ? "Required" : "Not Required"}
   • Derivatives Approval: ${terms.derivativesApproval ? "Required" : "Not Required"}
-  • Revenue Share: ${terms.commercialRevenueShare ? `${terms.commercialRevenueShare}%` : "Not Required"}`; 
+  • Revenue Share: ${terms.commercialRevenueShare ? `${terms.commercialRevenueShare}%` : "Not Required"}`;
 };
 
 /**

@@ -38,7 +38,9 @@ export class LicenseIPAction {
             licensorIpId: params.licensorIpId,
             licenseTermsId: params.licenseTermsId,
             amount: params.amount || 1,
-            txOptions: { waitForTransaction: true },
+            maxMintingFee: BigInt(0), // disabled
+            maxRevenueShare: 100, // default
+            txOptions: { waitForTransaction: true }
         });
 
         return response;
@@ -81,7 +83,7 @@ export const licenseIPAction = {
         try {
             const response = await action.licenseIP(content);
             callback?.({
-                text: `Successfully minted license tokens: ${response.licenseTokenIds.join(", ")}. Transaction Hash: ${response.txHash}. View it on the block explorer: https://odyssey.storyscan.xyz/tx/${response.txHash}`,
+                text: `Successfully minted license tokens: ${response.licenseTokenIds.join(", ")}. Transaction Hash: ${response.txHash}. View it on the block explorer: https://aeneid.storyscan.xyz/tx/${response.txHash}`,
             });
             return true;
         } catch (e) {

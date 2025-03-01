@@ -1,9 +1,10 @@
 import { IAgentRuntime, Provider, Memory, State, HandlerCallback, Plugin } from '@elizaos/core';
 import { StoryClient, RegisterIpResponse, MintLicenseTokensResponse, AttachLicenseTermsResponse, RegisterPILResponse } from '@story-protocol/core-sdk';
-import { Address, Chain, Hash, PublicClient, HttpTransport, Account, WalletClient } from 'viem';
+import * as viem from 'viem';
+import { Address, Chain, Hash, PublicClient, HttpTransport, WalletClient, Account } from 'viem';
 import { Token } from '@lifi/types';
 
-type SupportedChain = "odyssey";
+type SupportedChain = "aeneid";
 interface Transaction {
     hash: Hash;
     from: Address;
@@ -39,13 +40,16 @@ interface ChainMetadata {
 }
 interface ChainConfig {
     chain: Chain;
-    publicClient: PublicClient<HttpTransport, Chain, Account | undefined>;
+    publicClient: PublicClient<HttpTransport, Chain>;
     walletClient?: WalletClient;
 }
 interface RegisterIPParams {
     title: string;
     description: string;
     ipType: string;
+    creatorName: string;
+    mediaUrl: string;
+    mimeType: string;
 }
 interface LicenseIPParams {
     licensorIpId: Address;
@@ -92,6 +96,39 @@ interface ProviderError extends Error {
     data?: unknown;
 }
 
+declare const storyAeneid: {
+    blockExplorers: {
+        readonly default: {
+            readonly name: "Story Aeneid Explorer";
+            readonly url: "https://aeneid.storyscan.xyz";
+        };
+    };
+    contracts: {
+        readonly multicall3: {
+            readonly address: "0xca11bde05977b3631167028862be2a173976ca11";
+            readonly blockCreated: 1792;
+        };
+    };
+    id: 1315;
+    name: "Story Aeneid";
+    nativeCurrency: {
+        readonly decimals: 18;
+        readonly name: "IP";
+        readonly symbol: "IP";
+    };
+    rpcUrls: {
+        readonly default: {
+            readonly http: readonly ["https://aeneid.storyrpc.io"];
+        };
+    };
+    sourceId?: number | undefined;
+    testnet: true;
+    custom?: Record<string, unknown>;
+    fees?: viem.ChainFees<undefined>;
+    formatters?: undefined;
+    serializers?: viem.ChainSerializers<undefined, viem.TransactionSerializable>;
+    readonly network: "story-aeneid";
+};
 declare const DEFAULT_CHAIN_CONFIGS: Record<SupportedChain, ChainMetadata>;
 declare class WalletProvider {
     private storyClient;
@@ -109,7 +146,7 @@ declare class WalletProvider {
 }
 declare const storyWalletProvider: Provider;
 
-declare const registerIPTemplate = "Given the recent messages below:\n\n{{recentMessages}}\n\nExtract the following information about the requested IP registration:\n- Field \"title\": The title of your IP\n- Field \"description\": The description of your IP\n- Field \"ipType\": The type of your IP. Type of the IP Asset, can be defined arbitrarily by the\ncreator. I.e. \u201Ccharacter\u201D, \u201Cchapter\u201D, \u201Clocation\u201D, \u201Citems\u201D, \"music\", etc. If a user doesn't provide\nan ipType, you can infer it from the title and description. It should be one word.\n\nRespond with a JSON markdown block containing only the extracted values. A user must explicitly provide a title and description.\n\n```json\n{\n    \"title\": string,\n    \"description\": string,\n    \"ipType\": string\n}\n```\n";
+declare const registerIPTemplate = "Given the recent messages below:\n\n{{recentMessages}}\n\nExtract the following information about the requested IP registration:\n- Field \"title\": The title of your IP. **Do not search the web for any information related to the title.**\n- Field \"description\": The description of your IP. **Do not search the web for any information related to the description.**\n- Field \"ipType\": The type of your IP. **Do not search the web for any information related to the IP type.**\n- Field \"creatorName\": The name of the creator. **Do not search the web for any information related to the creator's name.**\n- Field \"mediaUrl\": The media url for the media provided by the creator. Should be included in description or provided by artist. If not found, ask the user directly for the media URL. **Do not search the web for the URL, do not attempt to access it, validate it, or use any web search tools. Simply collect the URL as provided by the user.**\n- Field \"mimeType\": The mimetype is the mime type of media url, ask for the mime type if not provided or extract from media url. **Do not search the web for any information related to the mime type.**\n\nRespond with a JSON markdown block containing only the extracted values. A user must explicitly provide a title and description.\n\n```json\n{\n    \"title\": string,\n    \"description\": string,\n    \"ipType\": string,\n    \"creatorName\": string,\n    \"mediaUrl\": string,\n    \"mimeType\": string,\n}\n```\n";
 declare const licenseIPTemplate = "Given the recent messages below:\n\n{{recentMessages}}\n\nExtract the following information about the requested IP licensing:\n- Field \"licensorIpId\": The IP Asset that you want to mint a license from\n- Field \"licenseTermsId\": The license terms that you want to mint a license for\n- Field \"amount\": The amount of licenses to mint\n\nRespond with a JSON markdown block containing only the extracted values. A user must explicitly provide a licensorIpId and licenseTermsId.\nIf they don't provide the amount, set it as null.\n\n```json\n{\n    \"licensorIpId\": string,\n    \"licenseTermsId\": string,\n    \"amount\": number | null\n}\n```\n";
 declare const getIPDetailsTemplate = "Given the recent messages below:\n\n{{recentMessages}}\n\nExtract the following information about the requested IP details:\n- Field \"ipId\": The IP Asset that you want to get details for\n\nRespond with a JSON markdown block containing only the extracted values. A user must provide an ipId.\n\n```json\n{\n    \"ipId\": string\n}\n```\n";
 declare const attachTermsTemplate = "Given the recent messages below:\n\n{{recentMessages}}\n\nExtract the following information about attaching license terms to an IP Asset:\n- Field \"ipId\": The IP Asset that you want to attach the license terms to\n- Field \"mintingFee\": The fee to mint this license from the IP Asset.\n- Field \"commercialUse\": Whether or not the IP Asset can be used commercially.\n- Field \"commercialRevShare\": The percentage of revenue that the IP Asset owner will receive\nfrom commercial use of the IP Asset. This must be between 0 and 100. If a user specifies\na commercialRevShare, then commercialUse must be set to true.\n\nRespond with a JSON markdown block containing only the extracted values. A user must provide an ipId. If they don't provide\nthe others fields, set them as null.\n\n```json\n{\n    \"ipId\": string,\n    \"mintingFee\": number | null,\n    \"commercialUse\": boolean | null,\n    \"commercialRevShare\": number | null\n}\n```\n";
@@ -280,4 +317,4 @@ declare const getIPDetailsAction: {
 
 declare const storyPlugin: Plugin;
 
-export { AttachTermsAction, type AttachTermsParams, type ChainConfig, type ChainMetadata, DEFAULT_CHAIN_CONFIGS, type EvmPluginConfig, GetAvailableLicensesAction, LicenseIPAction, type LicenseIPParams, type ProviderError, RegisterIPAction, type RegisterIPParams, type SupportedChain, type TokenData, type TokenListResponse, type TokenPriceResponse, type TokenWithBalance, type Transaction, type WalletBalance, WalletProvider, attachTermsAction, attachTermsTemplate, storyPlugin as default, getAvailableLicensesAction, getIPDetailsAction, getIPDetailsTemplate, licenseIPAction, licenseIPTemplate, registerIPAction, registerIPTemplate, storyPlugin, storyWalletProvider };
+export { AttachTermsAction, type AttachTermsParams, type ChainConfig, type ChainMetadata, DEFAULT_CHAIN_CONFIGS, type EvmPluginConfig, GetAvailableLicensesAction, LicenseIPAction, type LicenseIPParams, type ProviderError, RegisterIPAction, type RegisterIPParams, type SupportedChain, type TokenData, type TokenListResponse, type TokenPriceResponse, type TokenWithBalance, type Transaction, type WalletBalance, WalletProvider, attachTermsAction, attachTermsTemplate, storyPlugin as default, getAvailableLicensesAction, getIPDetailsAction, getIPDetailsTemplate, licenseIPAction, licenseIPTemplate, registerIPAction, registerIPTemplate, storyAeneid, storyPlugin, storyWalletProvider };
